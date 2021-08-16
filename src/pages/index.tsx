@@ -1,6 +1,15 @@
+import { useState } from 'react';
 import { GetStaticProps } from 'next';
+import Head from "next/head";
+import Link from "next/link";
 
 import { getPrismicClient } from '../services/prismic';
+import Prismic from '@prismicio/client';
+
+import { format } from 'date-fns';
+import ptBR from 'date-fns/locale/pt-BR';
+
+import { FiCalendar, FiUser } from 'react-icons/fi';
 
 import commonStyles from '../styles/common.module.scss';
 import styles from './home.module.scss';
@@ -24,13 +33,122 @@ interface HomeProps {
   postsPagination: PostPagination;
 }
 
-// export default function Home() {
-//   // TODO
-// }
+export default function Home({ postsPagination }: HomeProps) {
+  const [loadPosts, setLoadPosts] = useState<Post[]>([]);
+  
+  async function handleLoadPosts() {
+    const response = await fetch(postsPagination.next_page)
+    const loadMorePostsResponse = await response.json()
+    
+    const posts = loadMorePostsResponse.results.map(post => {
 
-// export const getStaticProps = async () => {
-//   // const prismic = getPrismicClient();
-//   // const postsResponse = await prismic.query(TODO);
+      return {
+        uid: post.uid,
+        first_publication_date: format(new Date(post.first_publication_date), "dd MMM yyyy", {locale: ptBR,}),
+        data: {
+          title: post.data.title,
+          subtitle: post.data.subtitle,
+          author: post.data.author
+        }
+      };
+    });
+    
+    postsPagination.next_page = loadMorePostsResponse.next_page;
+    setLoadPosts(posts);
+  }
 
-//   // TODO
-// };
+  return (
+    <>
+      <Head>
+        <title>Posts | Spacetraveling</title>
+      </Head>
+
+      <main className={commonStyles.container}>
+        <div className={styles.posts}>
+          <img src="/Logo.svg" alt="logo" />
+
+          { postsPagination.results.map(post => (
+            <Link key={post.uid} href={`/post/${post.uid}`}>
+              <a>
+                <strong>{post.data.title}</strong>
+                <p>{post.data.subtitle}</p>
+                <div className={styles.info}>
+                  <div>
+                    <FiCalendar /><span>{format(new Date(post.first_publication_date), "dd MMM yyyy", {locale: ptBR,})}</span>
+                  </div>
+                  <div>
+                    <FiUser /><span>{post.data.author}</span>
+                  </div>
+                </div>
+              </a>
+            </Link>
+          )) }
+
+          { loadPosts.map(post => (
+            <Link key={post.uid} href={`/post/${post.uid}`}>
+              <a>
+                <strong>{post.data.title}</strong>
+                <p>{post.data.subtitle}</p>
+                <div className={styles.info}>
+                  <div>
+                    <FiCalendar /><span>{post.first_publication_date}</span>
+                  </div>
+                  <div>
+                    <FiUser /><span>{post.data.author}</span>
+                  </div>
+                </div>
+              </a>
+            </Link>
+          )) }
+          
+          { postsPagination.next_page && (
+            <button
+              type="button"
+              onClick={handleLoadPosts}
+            >
+              Carregar mais posts
+            </button>
+          ) }
+        </div>
+      </main>
+    </>
+  );
+}
+
+export const getStaticProps: GetStaticProps = async () => {
+  const prismic = getPrismicClient();
+  
+  const postsResponse = await prismic.query([
+    Prismic.predicates.at('document.type', 'posts')
+  ], {
+    fetch: [
+      'posts.title', 
+      'posts.subtitle', 
+      'posts.author'
+    ],
+    pageSize: 1,
+  });
+
+  const posts = postsResponse.results.map(post => {
+
+    return {
+      uid: post.uid,
+      first_publication_date: post.first_publication_date,
+      data: {
+        title: post.data.title,
+        subtitle: post.data.subtitle,
+        author: post.data.author
+      }
+    };
+  });
+
+  return {
+    props: {
+      postsPagination: {
+        results: posts,
+        next_page: postsResponse.next_page,
+      }
+    },
+    revalidate: 60 * 60,
+  }
+};
