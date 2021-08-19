@@ -13,6 +13,8 @@ import { FiCalendar, FiUser } from 'react-icons/fi';
 
 import commonStyles from '../styles/common.module.scss';
 import styles from './home.module.scss';
+import { ExitPreviewButton } from '../components/ExitPreviewButton';
+import { postFormating } from '../formatting/prismicResponseFormating.';
 
 interface Post {
   uid?: string;
@@ -31,30 +33,21 @@ interface PostPagination {
 
 interface HomeProps {
   postsPagination: PostPagination;
+  preview: boolean;
 }
 
-export default function Home({ postsPagination }: HomeProps) {
+export default function Home({ postsPagination, preview }: HomeProps) {
   const [loadPosts, setLoadPosts] = useState<Post[]>([]);
+  const [nextPage, setNextPage] = useState(postsPagination.next_page);
   
   async function handleLoadPosts() {
-    const response = await fetch(postsPagination.next_page)
-    const loadMorePostsResponse = await response.json()
-    
-    const posts = loadMorePostsResponse.results.map(post => {
-
-      return {
-        uid: post.uid,
-        first_publication_date: format(new Date(post.first_publication_date), "dd MMM yyyy", {locale: ptBR,}),
-        data: {
-          title: post.data.title,
-          subtitle: post.data.subtitle,
-          author: post.data.author
-        }
-      };
-    });
-    
-    postsPagination.next_page = loadMorePostsResponse.next_page;
-    setLoadPosts(posts);
+    await fetch(nextPage ? nextPage : '')
+      .then(response => response.json())
+      .then(data => {
+        const formattedData = postFormating(data);
+        setLoadPosts([...loadPosts, ...formattedData.results]);
+        setNextPage(formattedData.next_page);
+      });
   }
 
   return (
@@ -101,26 +94,36 @@ export default function Home({ postsPagination }: HomeProps) {
             </Link>
           )) }
           
-          { postsPagination.next_page && (
+          { nextPage ? (
             <button
               type="button"
               onClick={handleLoadPosts}
             >
               Carregar mais posts
             </button>
+          ) : (
+            ''
           ) }
+
+          {preview && (
+            <ExitPreviewButton />
+          )}
         </div>
       </main>
     </>
   );
 }
 
-export const getStaticProps: GetStaticProps = async () => {
+export const getStaticProps: GetStaticProps<HomeProps> = async ({
+  preview = false,
+  previewData,
+}) => {
   const prismic = getPrismicClient();
   
   const postsResponse = await prismic.query([
     Prismic.predicates.at('document.type', 'posts')
   ], {
+    ref: previewData?.ref ?? null,
     fetch: [
       'posts.title', 
       'posts.subtitle', 
@@ -147,7 +150,8 @@ export const getStaticProps: GetStaticProps = async () => {
       postsPagination: {
         results: posts,
         next_page: postsResponse.next_page,
-      }
+      },
+      preview
     },
     revalidate: 60 * 60,
   }
